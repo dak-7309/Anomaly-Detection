@@ -17,6 +17,8 @@ import numpy as np
 from torch.utils.data.sampler import SubsetRandomSampler
 import sys
 from model import resnet50
+from operator import itemgetter
+from PIL import Image
 
 
 def extract_frames(video_path):
@@ -80,10 +82,45 @@ class video_dataset(Dataset):
 
 def get_prediction(model,dataloaders):
 	values = ['','Assult','Normal','Arrest','Explosion']
-	for batch_i, X in enumerate(dataloaders['test']):
-		image_sequences = Variable(X)
-		predictions = model(image_sequences)
-		return values[predictions.detach().argmax(1).item()]
+	prediction = []
+	prediction_lists = []
+	for i in range(5):
+		for batch_i, X in enumerate(dataloaders['test']):
+			image_sequences = Variable(X)
+			predictions = model(image_sequences)
+			predictions = predictions.detach()
+			list_x = predictions.tolist()[0]
+			min_x = min(list_x)
+			list_x2 = [i-min_x for i in list_x]
+			sum_x = sum(list_x2)
+			list_x3 = [i/sum_x for i in list_x2]
+			prediction_lists.append(list_x3)
+			prediction.append(predictions.argmax(1).item())
+	final_prediction = max(set(prediction), key = prediction.count)
+	lx = []
+	k = -1
+	for i in prediction:
+		k += 1
+		if i == final_prediction:
+			if len(lx)>0:
+				if lx[i] < prediction_lists[k][i]:
+					lx = prediction_lists[k]
+			else:
+				lx = prediction_lists[k]
+	final_list = [0 for i in range(5)]
+	for i in range(4):
+		final_list[i] = int(lx[i+1]*100)
+	xl = sum(final_list)
+	final_list[4] = 100-xl
+	keyList = sorted(enumerate(final_list), key = itemgetter(1))
+	for i in range(5):
+		v = keyList[i][1]*((i+1)**3)
+		keyList[i] = (keyList[i][0],v)
+	theList = sorted(keyList, key = itemgetter(0))
+	result = [record for key, record in theList]
+	sux = sum(result)
+	list_final = [int((i/sux)*100) for i in result]
+	return values[final_prediction],list_final
 
 def main(vid_path):
 	model_path = 'c3d_48.h5'
@@ -93,6 +130,8 @@ def main(vid_path):
 	dataloaders = transform_image(index)
 	model = resnet50(class_num=8)
 	model.load_state_dict(torch.load(model_path))
+	file_name = 'output_img.jpg'
+	cv2.imwrite(file_name, final_image[:,128*8:128*9,:])
 	return get_prediction(model,dataloaders)
 
 if __name__ == '__main__':
